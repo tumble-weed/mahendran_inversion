@@ -109,7 +109,7 @@ def alpha_norm(t,alpha=6):
     a = torch.sum(t.pow(alpha))
     return a
 
-def invert(ref_image,hyperparams):
+def invert(ref,hyperparams):
     lr = hyperparams['lr']
     nepochs = hyperparams['nepochs']
     x_mag = torch.tensor(hyperparams['x_mag']).float().cuda()
