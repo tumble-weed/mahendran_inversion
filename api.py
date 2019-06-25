@@ -65,7 +65,7 @@ def prepare_for_inversion(modelname,model,name_to_invert):
                            ('classifier','0'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-2,'alpha_lambda':0,'nepochs':1000},
                            ('classifier','2'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-2,'alpha_lambda':0,'nepochs':1000},
                            ('classifier','6'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-2,'alpha_lambda':0,'nepochs':1000},} # the loss for classifier.6 oscillates a lot
-        x_mag,lr,tv_lambda,nepochs = good_hyperparams[name_to_invert].values()
+        x_mag,lr,tv_lambda,alpha_lambda,nepochs = good_hyperparams[name_to_invert].values()
         x_mag = torch.tensor(x_mag).float().cuda()
         tv_lambda = torch.tensor(tv_lambda).float().cuda()
     elif modelname == 'resnet18':
