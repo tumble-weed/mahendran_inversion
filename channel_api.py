@@ -1,3 +1,5 @@
+import dutils
+dutils.init()
 import torch,torchvision
 import numpy as np
 from matplotlib import pyplot as plt
@@ -9,6 +11,7 @@ import os
 from PIL import Image
 import pdb
 import wandb
+
 '''
 For Reproducibility
 '''
@@ -59,13 +62,27 @@ def prepare_for_inversion(modelname,model,name_to_invert):
         #features '0' to '12'
         #classifier '0' to '6'
 #         name_to_invert = ('classifier','6')
-        layer_to_invert  = model._modules[name_to_invert[0]]._modules[name_to_invert[1]]
+        #layer_to_invert  = model._modules[name_to_invert[0]]._modules[name_to_invert[1]]
+        for lname,l in model.named_modules():
+            print(lname)
+            if isinstance(name_to_invert,str):
+                if lname == name_to_invert:
+                    layer_to_invert = l
+                    break   
+            elif isinstance(name_to_invert,tuple):
+                name_to_invert0  = ''.join(name_to_invert) 
+                if lname == name_to_invert0:
+                    layer_to_invert = l
+                    break
+
         good_hyperparams = {('features','6'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-4,'alpha_lambda':0,'nepochs':1000},
                             ('features','8'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-3,'alpha_lambda':0,'nepochs':1000},
                            ('features','12'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-2,'alpha_lambda':0,'nepochs':1000},
                            ('classifier','0'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-2,'alpha_lambda':0,'nepochs':1000},
                            ('classifier','2'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-2,'alpha_lambda':0,'nepochs':1000},
-                           ('classifier','6'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-2,'alpha_lambda':0,'nepochs':1000},} # the loss for classifier.6 oscillates a lot
+                           ('classifier','6'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-2,'alpha_lambda':0,'nepochs':1000},
+                           'avgpool':{'x_mag':1e0,'lr':1e-2,'tv_lambda':1e-2,'alpha_lambda':1e-3,'nepochs':1000},
+                           } # the loss for classifier.6 oscillates a lot
         x_mag,lr,tv_lambda,alpha_lambda,nepochs = good_hyperparams[name_to_invert].values()
         x_mag = torch.tensor(x_mag).float().cuda()
         tv_lambda = torch.tensor(tv_lambda).float().cuda()
@@ -81,10 +98,9 @@ def prepare_for_inversion(modelname,model,name_to_invert):
                            ('layer3','1','bn2'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-6,'alpha_lambda':0,'nepochs':1000},
                             ('layer4','0','bn2'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-3,'alpha_lambda':1e-4,'nepochs':1000},
                            ('layer4','1','bn2'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-3,'alpha_lambda':1e-4,'nepochs':1000},
-                           'avgpool':{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-2,'alpha_lambda':1e-3,'nepochs':1000},
+                           'avgpool':{'x_mag':1e0,'lr':1e-2,'tv_lambda':1e-2,'alpha_lambda':1e-3,'nepochs':1000},
                            'fc':{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-2,'alpha_lambda':1e-3,'nepochs':1000},} # Have checked these less precisely
-        hyperparams = good_hyperparams[name_to_invert]
-
+    hyperparams = good_hyperparams[name_to_invert]
 
     def hook(self,input,output):
         self.our_feats = output
@@ -114,17 +130,35 @@ def invert(ref,
            hyperparams,
            model,
            layer_to_invert,
+           saliency_weights = None,
           ):
+    #p46()
+    device = ref.device
     lr = hyperparams['lr']
     nepochs = hyperparams['nepochs']
     x_mag = torch.tensor(hyperparams['x_mag']).float().cuda()
     tv_lambda = torch.tensor( hyperparams['tv_lambda']).float().cuda()
     alpha_lambda = torch.tensor(hyperparams['alpha_lambda']).float().cuda()
     
+    #initialising saliency with random noise
+#integrate with ref feats and x feats
     ''' Reference Features '''
     ref_scores = model(ref)
     ref_feat = layer_to_invert.our_feats.detach()
+    if saliency_weights is None:
+        num_channels = 1
+        saliency_weights = torch.zeros(ref_feat.shape[1],device=device)#torch.rand(num_channels).cuda()
+        saliency_weights[:num_channels] = 1
+        saliency_weights = saliency_weights.bool()
+        print(f'Initialised saliency weights with random values: {saliency_weights}')
+
     
+    #saliency_weights = saliency_weights.view(1,-1,1,1)
+    p46()
+    ref_feat = ref_feat[:,saliency_weights,:,:] 
+
+    
+
     ''' to be Inverted tensor and its features'''
     x = x_mag*torch.randn(ref.shape).cuda()
 
@@ -141,6 +175,9 @@ def invert(ref,
     x_scores = model(x) #should I pass it through preprocess?
     x_feat = layer_to_invert.our_feats
 
+    #x_feat = x_feat[:,:salience_weights.shape[1],:,:] * saliency_weights
+
+
     opt = torch.optim.Adam([x],lr=lr)
 
 
@@ -151,7 +188,9 @@ def invert(ref,
         print(e,end=',')
         x_scores = model(x) #should I pass it through preprocess?
         x_feat = layer_to_invert.our_feats
+        x_feat = x_feat[:,saliency_weights,:,:]
         mse_loss = torch.nn.functional.mse_loss(ref_feat,x_feat)
+        assert (mse_loss >= 0)
         tv_loss = tv(x)
         alpha_loss = alpha_norm(x)
         total_loss = mse_loss + tv_lambda*tv_loss + alpha_lambda * alpha_loss
