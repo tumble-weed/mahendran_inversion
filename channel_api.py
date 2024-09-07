@@ -98,7 +98,7 @@ def prepare_for_inversion(modelname,model,name_to_invert):
                            ('layer3','1','bn2'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-6,'alpha_lambda':0,'nepochs':1000},
                             ('layer4','0','bn2'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-3,'alpha_lambda':1e-4,'nepochs':1000},
                            ('layer4','1','bn2'):{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-3,'alpha_lambda':1e-4,'nepochs':1000},
-                           'avgpool':{'x_mag':1e0,'lr':1e-2,'tv_lambda':1e-2,'alpha_lambda':1e-3,'nepochs':1000},
+                           'avgpool':{'x_mag':1e0,'lr':0,'tv_lambda':1e-2,'alpha_lambda':1e-3,'nepochs':1000},
                            'fc':{'x_mag':1e0,'lr':1e-1,'tv_lambda':1e-2,'alpha_lambda':1e-3,'nepochs':1000},} # Have checked these less precisely
     hyperparams = good_hyperparams[name_to_invert]
 
@@ -106,7 +106,7 @@ def prepare_for_inversion(modelname,model,name_to_invert):
         self.our_feats = output
     hooked_layer = layer_to_invert.register_forward_hook(hook)
     
-    return layer_to_invert,hyperparams
+    return layer_to_invert,hyperparams,modelname,name_to_invert
 
 
 def tv(t,beta=2):
@@ -130,6 +130,8 @@ def invert(ref,
            hyperparams,
            model,
            layer_to_invert,
+           modelname,
+           name_to_invert,
            saliency_weights = None,
           ):
     #p46()
@@ -146,7 +148,8 @@ def invert(ref,
     ref_scores = model(ref)
     ref_feat = layer_to_invert.our_feats.detach()
     if saliency_weights is None:
-        num_channels = 1
+        #num_channels = ref_feat.shape[1]
+        num_channels = ref_feat.shape[1]
         saliency_weights = torch.zeros(ref_feat.shape[1],device=device)#torch.rand(num_channels).cuda()
         saliency_weights[:num_channels] = 1
         saliency_weights = saliency_weights.bool()
@@ -168,7 +171,8 @@ def invert(ref,
     x_im = np.transpose(x_np[0],(1,2,0))
     x_im = (x_im - x_im.min())/(x_im.max()-x_im.min())
     plt.imshow(x_im)
-    wandb.init(project='inversion',name='inversion')
+    name = f'{modelname}_{name_to_invert}'
+    run =  wandb.init(project='inversion',name=name)
     wandb.log({"image":wandb.Image(plt)},commit=False)
     plt.close()
 
@@ -194,7 +198,7 @@ def invert(ref,
         tv_loss = tv(x)
         alpha_loss = alpha_norm(x)
         total_loss = mse_loss + tv_lambda*tv_loss + alpha_lambda * alpha_loss
-
+        #total_loss = mse_loss
         opt.zero_grad()
         total_loss.backward()
         opt.step()
@@ -209,7 +213,8 @@ def invert(ref,
 
 
     plt.figure()
-    plt.plot(np.log10(all_losses['mse']),'r',label='mse')
+    #plt.plot(np.log10(all_losses['mse']),'r',label='mse')
+    plt.plot((all_losses['mse']),'r',label='mse')
     plt.legend()
     wandb.log({"mse":wandb.Image(plt)},commit=False)   
     plt.close()
@@ -242,4 +247,6 @@ def invert(ref,
     plt.imshow(x_im)
     wandb.log({"inverted_image":wandb.Image(plt)},commit=False)
     wandb.log({})
+
+    run.finish()
     pass

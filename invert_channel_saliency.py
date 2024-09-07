@@ -13,6 +13,8 @@
 
 import skimage.io
 from PIL import Image
+import wandb
+
 
 
 # In[3]:
@@ -30,7 +32,15 @@ from PIL import Image
 
 
 # In[ ]:
+#config = {
+#    "modelname": "resnet18",
+ #   "name_to_invert": "avgpool",
+  #  "image": "images-master/ILSVRC2012_val_00000013.JPEG"
+#}
 
+
+#run = wandb.init(project="inversion", config=config)
+#run.save()
 
 from channel_api import get_model,prepare_for_inversion,invert
 
@@ -46,7 +56,7 @@ model, model_imsize, preprocess,denormalize = get_model(modelname)
 
 
 name_to_invert = 'avgpool'
-layer_to_invert,hyperparams = prepare_for_inversion(modelname,model,name_to_invert)
+layer_to_invert,hyperparams,modelname,name_to_invert = prepare_for_inversion(modelname,model,name_to_invert)
 
 
 # In[ ]:
@@ -61,5 +71,5 @@ ref= ref.cuda()
 # In[10]:
 
 
-invert(ref,hyperparams,model,layer_to_invert)
+invert(ref,hyperparams,model,layer_to_invert,modelname,name_to_invert)
 
